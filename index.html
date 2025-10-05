@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Protected Document Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, sans-serif;
+        background: #525252;
+        min-height: 100vh;
+      }
+
+      /* Login Screen */
+      .login-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 20px;
+      }
+
+      .login-container {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        padding: 60px 40px;
+        max-width: 450px;
+        width: 100%;
+        text-align: center;
+      }
+
+      .lock-icon {
+        width: 120px;
+        height: 120px;
+        margin: 0 auto 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .lock-icon img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+
+      h1 {
+        color: #2d3748;
+        font-size: 28px;
+        margin-bottom: 12px;
+        font-weight: 700;
+      }
+
+      .subtitle {
+        color: #718096;
+        margin-bottom: 40px;
+        font-size: 15px;
+      }
+
+      .input-group {
+        position: relative;
+        margin-bottom: 24px;
+      }
+
+      input[type="password"] {
+        width: 100%;
+        padding: 16px 20px;
+        border: 2px solid #e2e8f0;
+        border-radius: 10px;
+        font-size: 16px;
+        transition: all 0.3s ease;
+        outline: none;
+      }
+
+      input[type="password"]:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      button {
+        width: 100%;
+        padding: 16px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .error-message {
+        background: #fee;
+        color: #c53030;
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-top: 16px;
+        font-size: 14px;
+        display: none;
+        animation: shake 0.4s ease;
+      }
+
+      .error-message.show {
+        display: block;
+      }
+
+      @keyframes shake {
+        0%,
+        100% {
+          transform: translateX(0);
+        }
+        25% {
+          transform: translateX(-10px);
+        }
+        75% {
+          transform: translateX(10px);
+        }
+      }
+
+      /* Loading Screen */
+      .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+
+      .loading-content {
+        text-align: center;
+        color: white;
+      }
+
+      .spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 20px;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* Viewer */
+      .viewer-wrapper {
+        display: none;
+        min-height: 100vh;
+      }
+
+      .viewer-header {
+        position: sticky;
+        top: 0;
+        background: #2d3748;
+        color: white;
+        padding: 16px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        z-index: 100;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      }
+
+      .viewer-title {
+        font-size: 18px;
+        font-weight: 600;
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .control-btn {
+        padding: 8px 16px;
+        background: #4a5568;
+        border: none;
+        color: white;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: background 0.2s ease;
+        width: auto;
+      }
+
+      .control-btn:hover {
+        background: #5a6778;
+        transform: none;
+      }
+
+      .control-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .page-info {
+        color: #e2e8f0;
+        font-size: 14px;
+        padding: 0 8px;
+      }
+
+      /* PDF Container */
+      .pdf-container {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+        background: #525252;
+      }
+
+      .pdf-page {
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        background: white;
+        max-width: 100%;
+      }
+
+      .footer {
+        background: #2d3748;
+        padding: 16px 24px;
+        text-align: center;
+        color: #a0aec0;
+        font-size: 13px;
+        margin-top: auto;
+      }
+
+      @media (max-width: 768px) {
+        .login-container {
+          padding: 40px 24px;
+        }
+
+        h1 {
+          font-size: 24px;
+        }
+
+        .lock-icon {
+          width: 100px;
+          height: 100px;
+          margin: 0 auto 24px;
+        }
+
+        .viewer-header {
+          padding: 12px 16px;
+        }
+
+        .viewer-title {
+          font-size: 16px;
+          width: 100%;
+        }
+
+        .controls {
+          width: 100%;
+          justify-content: center;
+        }
+
+        .control-btn {
+          padding: 6px 12px;
+          font-size: 13px;
+        }
+
+        .pdf-container {
+          padding: 10px;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .lock-icon {
+          width: 80px;
+          height: 80px;
+          margin: 0 auto 20px;
+        }
+
+        h1 {
+          font-size: 20px;
+        }
+
+        .subtitle {
+          font-size: 14px;
+        }
+
+        .login-container {
+          padding: 30px 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Login Screen -->
+    <div id="login" class="login-overlay">
+      <div class="login-container">
+        <div class="lock-icon">
+          <img
+            src="https://mevrik-cloud.mevrik.com/apps_15/LB6WV-15_8DXT_mevrik-logo-1-.png"
+            alt="Mevrik Logo"
+          />
+        </div>
+        <h1>Mevrik Document</h1>
+        <p class="subtitle">Enter password to view this document</p>
+        <form id="password-form">
+          <div class="input-group">
+            <input
+              type="password"
+              id="password-input"
+              placeholder="Enter password"
+              autocomplete="off"
+              required
+            />
+          </div>
+          <button type="submit" id="submit-btn">Unlock</button>
+          <div id="error-message" class="error-message"></div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="loading" class="loading-overlay">
+      <div class="loading-content">
+        <div class="spinner"></div>
+        <p>Decrypting and loading document...</p>
+      </div>
+    </div>
+
+    <!-- Viewer -->
+    <div id="viewer" class="viewer-wrapper">
+      <div class="viewer-header">
+        <div class="viewer-title">📄 Mevrik Viewer</div>
+        <div class="controls">
+          <span class="page-info">
+            Page <span id="current-page">1</span> of
+            <span id="total-pages">-</span>
+          </span>
+          <button class="control-btn" id="zoom-out">Zoom −</button>
+          <button class="control-btn" id="zoom-in">Zoom +</button>
+          <button class="control-btn" id="fit-width">Fit Width</button>
+        </div>
+      </div>
+      <div id="pdf-container" class="pdf-container"></div>
+      <div class="footer">🔐 Protected Document Viewer — © Mevrik</div>
+    </div>
+
+    <script>
+      // Configuration
+      const CONFIG = {
+        encryptedPdfFile: "rnd-document.pdf.enc",
+        correctPasswordHash:
+          "18be59f72c23c94957077bd3d1ca4e05ddd4d89459fa6123809c64c70c4371fa",
+      };
+
+      // PDF.js configuration
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+      let pdfDoc = null;
+      let scale = 1.5;
+      let renderedPages = new Set();
+
+      // DOM elements
+      const loginScreen = document.getElementById("login");
+      const viewerScreen = document.getElementById("viewer");
+      const loadingScreen = document.getElementById("loading");
+      const passwordForm = document.getElementById("password-form");
+      const passwordInput = document.getElementById("password-input");
+      const errorMessage = document.getElementById("error-message");
+      const pdfContainer = document.getElementById("pdf-container");
+
+      // Hash password using SHA256
+      function hashPassword(password) {
+        return CryptoJS.SHA256(password).toString();
+      }
+
+      // Decrypt PDF data
+      function decryptPDF(encryptedData, password) {
+        try {
+          console.log("Attempting decryption...");
+
+          const decrypted = CryptoJS.AES.decrypt(encryptedData, password);
+          const decryptedStr = decrypted.toString(CryptoJS.enc.Utf8);
+
+          console.log("Decrypted string length:", decryptedStr.length);
+
+          if (!decryptedStr || decryptedStr.length === 0) {
+            console.error("Decryption produced empty result");
+            return null;
+          }
+
+          // Convert base64 string to Uint8Array
+          const binaryString = atob(decryptedStr);
+          const len = binaryString.length;
+          const bytes = new Uint8Array(len);
+          for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+
+          // Verify PDF header
+          const header = String.fromCharCode(...bytes.slice(0, 4));
+          console.log("PDF header:", header);
+
+          if (!header.startsWith("%PDF")) {
+            console.error("Invalid PDF header:", header);
+            return null;
+          }
+
+          console.log("Decryption successful, PDF bytes:", bytes.length);
+          return bytes;
+        } catch (e) {
+          console.error("Decryption error:", e);
+          return null;
+        }
+      }
+
+      // Show error message
+      function showError(message) {
+        errorMessage.textContent = message;
+        errorMessage.classList.add("show");
+        setTimeout(() => {
+          errorMessage.classList.remove("show");
+        }, 3000);
+      }
+
+      // Render a single page
+      async function renderPage(pageNum) {
+        if (renderedPages.has(pageNum)) return;
+
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: scale });
+
+        const canvas = document.createElement("canvas");
+        canvas.className = "pdf-page";
+        const ctx = canvas.getContext("2d");
+
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        await page.render({
+          canvasContext: ctx,
+          viewport: viewport,
+        }).promise;
+
+        pdfContainer.appendChild(canvas);
+        renderedPages.add(pageNum);
+      }
+
+      // Render all pages
+      async function renderAllPages() {
+        pdfContainer.innerHTML = "";
+        renderedPages.clear();
+
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+          await renderPage(i);
+        }
+
+        updatePageInfo();
+      }
+
+      // Update current page based on scroll position
+      function updatePageInfo() {
+        const canvases = pdfContainer.querySelectorAll(".pdf-page");
+        const scrollTop = window.scrollY;
+        const windowHeight = window.innerHeight;
+
+        let currentPage = 1;
+        canvases.forEach((canvas, index) => {
+          const rect = canvas.getBoundingClientRect();
+          if (rect.top < windowHeight / 2 && rect.bottom > windowHeight / 2) {
+            currentPage = index + 1;
+          }
+        });
+
+        document.getElementById("current-page").textContent = currentPage;
+      }
+
+      // Load and decrypt PDF
+      async function loadPDF(password) {
+        try {
+          loadingScreen.style.display = "flex";
+          loginScreen.style.display = "none";
+
+          console.log("Fetching encrypted file:", CONFIG.encryptedPdfFile);
+          const response = await fetch(CONFIG.encryptedPdfFile);
+          if (!response.ok) {
+            throw new Error(
+              `Failed to load encrypted PDF file (${response.status})`
+            );
+          }
+
+          const encryptedData = await response.text();
+          console.log("Encrypted data loaded, length:", encryptedData.length);
+
+          const pdfData = decryptPDF(encryptedData, password);
+
+          if (!pdfData) {
+            throw new Error(
+              "Decryption failed - incorrect password or corrupted file"
+            );
+          }
+
+          console.log("Loading PDF document...");
+          pdfDoc = await pdfjsLib.getDocument({ data: pdfData }).promise;
+          document.getElementById("total-pages").textContent = pdfDoc.numPages;
+
+          loadingScreen.style.display = "none";
+          viewerScreen.style.display = "block";
+
+          await renderAllPages();
+        } catch (error) {
+          console.error("Error loading PDF:", error);
+          loadingScreen.style.display = "none";
+          loginScreen.style.display = "flex";
+
+          if (error.message.includes("Failed to load")) {
+            showError(
+              "Could not find the encrypted PDF file. Make sure document.pdf.enc is uploaded."
+            );
+          } else if (error.message.includes("Decryption failed")) {
+            showError("Incorrect password. Please try again.");
+          } else {
+            showError("Failed to load document: " + error.message);
+          }
+        }
+      }
+
+      // Zoom controls
+      function zoomIn() {
+        scale += 0.2;
+        renderAllPages();
+      }
+
+      function zoomOut() {
+        if (scale <= 0.4) return;
+        scale -= 0.2;
+        renderAllPages();
+      }
+
+      function fitWidth() {
+        const containerWidth = pdfContainer.offsetWidth - 40;
+        pdfDoc.getPage(1).then((page) => {
+          const viewport = page.getViewport({ scale: 1 });
+          scale = containerWidth / viewport.width;
+          renderAllPages();
+        });
+      }
+
+      // Event listeners
+      passwordForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const password = passwordInput.value;
+        const passwordHash = hashPassword(password);
+
+        if (passwordHash === CONFIG.correctPasswordHash) {
+          await loadPDF(password);
+        } else {
+          showError("Incorrect password. Please try again.");
+          passwordInput.value = "";
+          passwordInput.focus();
+        }
+      });
+
+      document.getElementById("zoom-in").addEventListener("click", zoomIn);
+      document.getElementById("zoom-out").addEventListener("click", zoomOut);
+      document.getElementById("fit-width").addEventListener("click", fitWidth);
+
+      // Update page number on scroll
+      window.addEventListener("scroll", updatePageInfo);
+
+      // Focus password input on load
+      passwordInput.focus();
+    </script>
+  </body>
+</html>
